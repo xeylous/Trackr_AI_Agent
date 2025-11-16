@@ -1,0 +1,81 @@
+{
+  "users": {
+    "local_user": {
+      "profile": {
+        "fitness_level": "beginner",
+        "diet_type": "general",
+        "equipment": [],
+        "goals": [],
+        "name": "Hello",
+        "age": 24,
+        "gender": "male"
+      },
+      "logs": {
+        "workouts": [
+          {
+            "timestamp": "2025-11-16T12:08:53.660302",
+            "plan": {
+              "workout_name": "Quick full-body routine",
+              "duration": "20 minutes",
+              "intensity": "beginner",
+              "steps": [
+                "5 min warm-up: walk in place",
+                "3 x 10 bodyweight squats",
+                "3 x 10 push-ups (knees if needed)",
+                "3 x 20 jumping jacks",
+                "5 min stretching: legs, arms, back"
+              ],
+              "tips": "Move at a comfortable pace and stop if you feel discomfort."
+            }
+          },
+          {
+            "timestamp": "2025-11-16T12:39:06.985033",
+            "plan": {
+              "workout_name": "Quick full-body routine",
+              "duration": "2 minutes",
+              "intensity": "beginner",
+              "steps": [
+                "5 min warm-up: walk in place",
+                "3 x 10 bodyweight squats",
+                "3 x 10 push-ups (knees if needed)",
+                "3 x 20 jumping jacks",
+                "5 min stretching: legs, arms, back"
+              ],
+              "tips": "Move at a comfortable pace and stop if you feel discomfort."
+            }
+          }
+        ],
+        "meals": [
+          {
+            "timestamp": "2025-11-16T12:00:04.333643",
+            "meal": "pasta and vegetables with yogurt",
+            "estimated_calories": null
+          },
+          {
+            "timestamp": "2025-11-16T12:07:12.271201",
+            "meal": "rice and dal with salad",
+            "estimated_calories": null
+          },
+          {
+            "timestamp": "2025-11-16T12:08:22.257125",
+            "meal": "pasta and yogurt with salad",
+            "estimated_calories": null
+          },
+          {
+            "timestamp": "2025-11-16T12:37:12.457701",
+            "meal": "rice and dal in the lunch",
+            "estimated_calories": null
+          }
+        ],
+        "mood": [
+          {
+            "timestamp": "2025-11-16T12:08:37.431279",
+            "mood": "low",
+            "note": "I feel stressed today"
+          }
+        ],
+        "journal": []
+      }
+    }
+  }
+}
