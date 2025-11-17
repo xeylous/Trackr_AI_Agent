@@ -1,89 +1,42 @@
-# import json
-# import os
-
-# class MemoryService:
-#     def __init__(self, path="memory.json"):
-#         self.path = path
-#         self._data = {"users": {}}
-#         self._load()
-
-#     def _load(self):
-#         if os.path.exists(self.path):
-#             with open(self.path, "r") as f:
-#                 self._data = json.load(f)
-
-#     def _save(self):
-#         with open(self.path, "w") as f:
-#             json.dump(self._data, f, indent=2)
-
-#     def get_user(self, user_id: str):
-#         if user_id not in self._data["users"]:
-#             self._data["users"][user_id] = {
-#                 "profile": {
-#                     "fitness_level": "beginner",
-#                     "diet_type": "general",
-#                     "equipment": []
-#                 },
-#                 "logs": {
-#                     "workouts": [],
-#                     "meals": [],
-#                     "mood": []
-#                 }
-#             }
-#             self._save()
-#         return self._data["users"][user_id]
-
-#     def append_log(self, user_id: str, type_: str, entry: dict):
-#         user = self.get_user(user_id)
-#         user["logs"][type_].append(entry)
-#         self._save()
-
 # memory/memory_service.py
 
-import json
-import os
+from database.mongo_service import MongoService
+
 
 class MemoryService:
-    def __init__(self, path: str = "memory.json"):
-        self.path = path
-        self._data = {"users": {}}
-        self._load()
+    """
+    MemoryService acts as an abstraction layer between the agents
+    and persistent storage (MongoDB).
 
-    def _load(self):
-        if os.path.exists(self.path):
-            try:
-                with open(self.path, "r") as f:
-                    self._data = json.load(f)
-            except Exception:
-                self._data = {"users": {}}
+    Responsibilities:
+    - Retrieve and update user profiles
+    - Append logs for workouts, meals, mood, etc.
+    - Ensure user exists before writing to storage
+    """
 
-    def _save(self):
-        with open(self.path, "w") as f:
-            json.dump(self._data, f, indent=2)
+    def __init__(self):
+        self.db = MongoService()
 
-    def get_user(self, user_id: str):
-        if user_id not in self._data["users"]:
-            self._data["users"][user_id] = {
-                "profile": {
-                    "name": None,
-                    "age": None,
-                    "gender": None,   # 'male' | 'female' | 'non-binary' | 'prefer not to say'
-                    "fitness_level": "beginner",
-                    "diet_type": "general",
-                    "equipment": [],
-                    "goals": []
-                },
-                "logs": {
-                    "workouts": [],
-                    "meals": [],
-                    "mood": [],
-                    "journal": []
-                }
-            }
-            self._save()
-        return self._data["users"][user_id]
+    # ---------------- Core User Access ---------------- #
 
-    def append_log(self, user_id: str, log_type: str, entry: dict):
-        user = self.get_user(user_id)
-        user["logs"].setdefault(log_type, []).append(entry)
-        self._save()
+    def get_user(self, user_id: str) -> dict:
+        """Fetch user record. Auto-creates user if missing."""
+        return self.db.get_user(user_id)
+
+    def update_profile(self, user_id: str, new_profile: dict) -> None:
+        """Update user profile data."""
+        self.db.update_profile(user_id, new_profile)
+
+    def append_log(self, user_id: str, category: str, entry: dict) -> None:
+        """Store timestamped data such as meals, workouts or moods."""
+        self.db.append_log(user_id, category, entry)
+
+    # ---------------- Optional Helpers ---------------- #
+
+    def clear_logs(self, user_id: str) -> None:
+        """Erase stored logs (useful for testing/reset)."""
+        self.db.clear_logs(user_id)
+
+    def delete_user(self, user_id: str) -> None:
+        """Remove the user completely — optional admin use."""
+        self.db.delete_user(user_id)

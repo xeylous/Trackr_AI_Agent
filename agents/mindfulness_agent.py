@@ -3,65 +3,66 @@
 from datetime import datetime
 import json
 from agents.base_agent import BaseAgent
+from utils.personality import add_warmth
+
 
 class MindfulnessAgent(BaseAgent):
     """
     Mindfulness Agent:
-    - Provides emotionally safe support and reflection.
-    - Uses user's profile to personalize tone (age, name, goals).
-    - Logs mood, then generates a gentle, non-clinical response.
+    - Responds with supportive emotional reflection.
+    - Avoids clinical language, advice, or diagnosis.
+    - Logs user's emotional state and provides gentle guidance.
     """
 
     def __init__(self, memory, llm):
         super().__init__(memory, llm, "mindfulness_agent")
 
     def handle(self, user_id: str, message: str, context: dict) -> dict:
+
         user = self.memory.get_user(user_id)
         profile = user["profile"]
 
         mood = context.get("mood", "unknown")
         note = context.get("note", message)
 
-        # Store entry in memory
+        # Log entry
         self.memory.append_log(user_id, "mood", {
             "timestamp": datetime.utcnow().isoformat(),
             "mood": mood,
             "note": note
         })
 
-        # Personalization data
+        # Personal details
         name = profile.get("name") or "friend"
         age = profile.get("age")
         goal = profile.get("goals")
 
-        # Age-based tone adaptation (non-clinical)
+        # ----- Personal Tone Rules -----
         if age and age < 20:
-            tone_instruction = "Use a relatable, encouraging tone like a supportive older sibling."
+            tone_instruction = "Use a relatable, hopeful, friendly tone as if talking to a young adult."
         elif age and age > 45:
-            tone_instruction = "Use a grounded, gentle tone with respect and reassurance."
+            tone_instruction = "Use a slow, gentle, reassuring tone that feels grounding."
         else:
-            tone_instruction = "Use a balanced, calm, supportive tone."
+            tone_instruction = "Tone should be warm, validating, and balanced."
 
-        # Goal-based contextual encouragement
         goal_context = ""
         if goal:
-            goal_context = f"Their personal goal is: '{goal}'. Offer subtle encouragement connected to this goal without pressure."
+            goal_context = f"The user cares about: '{goal}'. If natural, connect the support to this intention — but avoid pressure."
 
-        # ---------- SYSTEM PROMPT WITH PERSONALIZATION ---------- #
+        # ----- System Prompt -----
         system_prompt = f"""
         You are the Mindfulness & Emotional Support Agent for LifeBalance AI.
 
         {tone_instruction}
         {goal_context}
 
-        Rules:
-        - Respond with empathy, validation, and warmth.
-        - DO NOT mention therapy, diagnosis, trauma, disorders, or crisis language.
-        - DO NOT provide medical advice or imply treatment.
-        - Keep suggestions small, actionable (breathing, awareness, journaling).
-        - Be supportive without judgment.
+        Boundaries:
+        - No therapy terms, diagnosis, or labels.
+        - No crisis language (examples: "help", "urgent", "emergency", "treatment").
+        - No medical instructions.
+        - Keep messages simple and emotionally safe.
 
-        Respond ONLY as valid JSON with keys:
+        Response format ONLY as JSON:
         {{
             "mood_acknowledgement": "",
             "journal_prompt": "",
@@ -70,34 +71,43 @@ class MindfulnessAgent(BaseAgent):
         }}
         """
 
-        # ---------- USER INPUT CONTEXT ---------- #
         user_prompt = f"""
-        User name: {name}
-        Mood label: {mood}
-        User message: "{note}"
+        User: {name}
+        Mood: {mood}
+        Message: "{note}"
         """
 
-        # Try Gemini response
+        # ----- LLM Execution -----
         try:
             generated = self.llm.generate(system_prompt, user_prompt) if self.llm else ""
-        except Exception:
+        except:
             generated = ""
 
-        # Try parse JSON response
+        # ----- Parse Output -----
         try:
             parsed = json.loads(generated)
-        except Exception:
+        except:
             parsed = {
-                "mood_acknowledgement": f"Thank you for sharing how you're feeling, {name}. Feeling {mood} is completely valid.",
-                "journal_prompt": "If you feel okay, write one sentence about what's weighing on your mind or what brought you peace today.",
+                "mood_acknowledgement": f"I hear you, {name}. Feeling {mood} is completely valid.",
+                "journal_prompt": "If it feels okay, write one short sentence describing what you need right now.",
                 "optional_breathing_or_grounding": (
-                    "Try a gentle grounding pause: inhale slowly for 4 seconds, "
-                    "hold for 2, then exhale for 6."
+                    "You can pause for a single slow breath: inhale 4 seconds, exhale longer than the inhale."
                 ),
                 "supportive_message": (
-                    "You're doing something meaningful: you're acknowledging your emotions instead of bottling them. "
-                    "Healing and growth often begin with awareness — and you're already there."
+                    "Checking in with how you feel is already a meaningful step. "
+                    "You're doing your best — and that is enough for now."
                 )
             }
+
+        # ----- Create UI-Friendly Output -----
+        display_text = (
+            f"🧘 **Mindfulness Check-In**\n\n"
+            f"💬 {parsed['mood_acknowledgement']}\n\n"
+            f"🪷 Quick grounding suggestion:\n➡ {parsed['optional_breathing_or_grounding']}\n\n"
+            f"📓 Journal prompt:\n➡ *{parsed['journal_prompt']}*\n\n"
+            f"💛 {parsed['supportive_message']}"
+        )
+
+        parsed["display"] = add_warmth(display_text)
 
         return parsed

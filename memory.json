@@ -43,6 +43,22 @@
               ],
               "tips": "Move at a comfortable pace and stop if you feel discomfort."
             }
+          },
+          {
+            "timestamp": "2025-11-16T13:37:58.212284",
+            "plan": {
+              "workout_name": "Quick full-body routine",
+              "duration": "20 minutes",
+              "intensity": "beginner",
+              "steps": [
+                "5 min warm-up: walk in place",
+                "3 x 10 bodyweight squats",
+                "3 x 10 push-ups (knees if needed)",
+                "3 x 20 jumping jacks",
+                "5 min stretching: legs, arms, back"
+              ],
+              "tips": "Move at a comfortable pace and stop if you feel discomfort."
+            }
           }
         ],
         "meals": [
@@ -64,6 +80,11 @@
           {
             "timestamp": "2025-11-16T12:37:12.457701",
             "meal": "rice and dal in the lunch",
+            "estimated_calories": null
+          },
+          {
+            "timestamp": "2025-11-16T13:36:40.657055",
+            "meal": "rice and dal",
             "estimated_calories": null
           }
         ],

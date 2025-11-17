@@ -2,54 +2,56 @@
 
 from agents.base_agent import BaseAgent
 from datetime import datetime, timedelta
+from utils.personality import add_warmth
+
 
 class AnalyticsAgent(BaseAgent):
     """
     Analytics Agent:
-    - Summarizes history, habits, streaks, and overall engagement.
-    - Creates positive motivation using badge system.
-    - Uses profile data to tailor tone (never gives clinical/medical advice).
+    - Reviews logged history and summarizes engagement.
+    - Tracks streaks and assigns achievement badges.
+    - Adapts encouragement to user profile traits.
     """
 
     def __init__(self, memory, llm=None):
         super().__init__(memory, llm, "analytics_agent")
 
-    # ---------- Internal Streak Logic ---------- #
+    # ---------- Streak Calculation ---------- #
 
     def calculate_streak(self, logs: list) -> int:
-        """Return consecutive daily streak length."""
+        """Return number of consecutive days with logging activity."""
         if not logs:
             return 0
 
         sorted_logs = sorted(logs, key=lambda x: x["timestamp"], reverse=True)
         streak = 1
-        previous_date = datetime.fromisoformat(sorted_logs[0]["timestamp"]).date()
+        last_date = datetime.fromisoformat(sorted_logs[0]["timestamp"]).date()
 
         for entry in sorted_logs[1:]:
             entry_date = datetime.fromisoformat(entry["timestamp"]).date()
-            if entry_date == previous_date - timedelta(days=1):
+            if entry_date == last_date - timedelta(days=1):
                 streak += 1
-                previous_date = entry_date
+                last_date = entry_date
             else:
                 break
 
         return streak
 
     def reward_badge(self, best_streak: int) -> str:
-        """Return achievement badge based on consistency level."""
+        """Generate badge label matching streak difficulty."""
         if best_streak >= 30:
-            return "🏆 Iron Discipline (30+ days streak!)"
+            return "🏆 Iron Discipline (30+ day streak)"
         if best_streak >= 14:
-            return "🔥 Momentum Builder (2 weeks!)"
+            return "🔥 Momentum Builder (2 weeks streak)"
         if best_streak >= 7:
-            return "💪 Consistency Achiever (1 week!)"
+            return "💪 Health Consistency Award (7 day streak)"
         if best_streak >= 3:
-            return "✨ Healthy Habit Starter (3+ days streak)"
-        return "🌱 Getting Started — proud of your first steps!"
+            return "✨ Habit Starter Badge (3+ days)"
+        return "🌱 First Steps — proud of your progress!"
 
-    # ---------- Main Execute Method ---------- #
+    # ---------- Main Execution ---------- #
 
-    def handle(self, user_id: str, message: str, context: dict) -> dict:
+    def handle(self, user_id: str, message: str, context: dict = None) -> dict:
         user = self.memory.get_user(user_id)
         profile = user["profile"]
         logs = user["logs"]
@@ -58,7 +60,7 @@ class AnalyticsAgent(BaseAgent):
         meals = logs.get("meals", [])
         moods = logs.get("mood", [])
 
-        # Streak calculations
+        # Compute streaks
         workout_streak = self.calculate_streak(workouts)
         meal_streak = self.calculate_streak(meals)
         mood_streak = self.calculate_streak(moods)
@@ -66,27 +68,29 @@ class AnalyticsAgent(BaseAgent):
         best_streak = max(workout_streak, meal_streak, mood_streak)
         badge = self.reward_badge(best_streak)
 
-        # Tone personalization
+        # Personal tone
         name = profile.get("name") or "friend"
         age = profile.get("age")
-        gender = profile.get("gender")
         goal = profile.get("goals")
 
-        personal_note = f"You're making steady progress, {name}."
-        if age and age > 45:
-            personal_note += " Your consistency at this stage of life is especially inspiring."
-        elif age and age < 18:
-            personal_note += " You're building strong habits early — amazing foundation!"
+        encouragement = f"You're showing meaningful consistency, {name}."
+
+        if age:
+            if age > 45:
+                encouragement += " Your dedication at this stage of life really stands out."
+            elif age < 18:
+                encouragement += " Building healthy habits this early is amazing!"
 
         if goal:
-            personal_note += f" Every step moves you closer to your goal: **{goal}**."
+            encouragement += f" You're progressing toward your goal: **{goal}**."
 
+        # Build structured summary
         summary = {
-            "summary_range": "entire logged history",
+            "summary_range": "full history",
             "profile": {
                 "name": name,
                 "age": age,
-                "gender": gender,
+                "gender": profile.get("gender"),
                 "goal": goal
             },
             "stats": {
@@ -99,12 +103,26 @@ class AnalyticsAgent(BaseAgent):
                     "mood_streak_days": mood_streak
                 }
             },
-            "achievement_badge": badge,
-            "encouragement": personal_note,
+            "badge": badge,
+            "encouragement": encouragement,
             "next_micro_goal": (
-                "Tomorrow, repeat ANY habit you've logged and add one tiny improvement "
-                "— even 3 minutes counts."
+                "Repeat any logged habit tomorrow and add one tiny improvement — "
+                "even 3 minutes or one mindful moment counts."
             )
         }
+
+        # Create friendly user-facing message
+        display_text = (
+            f"📊 **Progress Summary for {name}**\n\n"
+            f"🏋️ Workouts logged: **{len(workouts)}**\n"
+            f"🥗 Meals logged: **{len(meals)}**\n"
+            f"🧠 Mood check-ins: **{len(moods)}**\n\n"
+            f"🔥 Best streak: **{best_streak} days**\n"
+            f"🏅 Badge earned: **{badge}**\n\n"
+            f"{encouragement}\n\n"
+            f"🎯 Next micro-goal:\n➡ {summary['next_micro_goal']}"
+        )
+
+        summary["display"] = add_warmth(display_text)
 
         return summary

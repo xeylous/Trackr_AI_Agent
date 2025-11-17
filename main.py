@@ -9,198 +9,178 @@ from agents.nutrition_agent import NutritionAgent
 from agents.mindfulness_agent import MindfulnessAgent
 from agents.analytics_agent import AnalyticsAgent
 
+from services.auth_service import AuthService
+
+
 
 class Orchestrator:
     def __init__(self):
         self.memory = MemoryService()
         self.llm = GeminiClient()
+        self.auth = AuthService(self.memory)
 
-        # Initialize agents
+        # Agents
         self.fitness_agent = FitnessAgent(self.memory, self.llm)
         self.nutrition_agent = NutritionAgent(self.memory, self.llm)
         self.mindfulness_agent = MindfulnessAgent(self.memory, self.llm)
-        self.analytics_agent = AnalyticsAgent(self.memory, None)  # No LLM needed
+        self.analytics_agent = AnalyticsAgent(self.memory, None)
 
-    # ----------------- Onboarding Before Agent Logic ----------------- #
-    def onboarding(self, user_id: str, message: str):
-        user = self.memory.get_user(user_id)
-        profile = self.memory.get_user(user_id)["profile"]
+    # ---------------- Onboarding ---------------- #
 
-        defaults = {
-            "name": None,
-            "age": None,
-            "gender": None,
-            "fitness_level": profile.get("fitness_level", "beginner"),
-            "diet_type": profile.get("diet_type", "general"),
-            "goals": profile.get("goals", None),
-            "equipment": profile.get("equipment", [])
-        }
+    def onboarding(self, email: str, message: str):
+        user = self.memory.get_user(email)
+        profile = user["profile"]
+        status = user.get("onboarding_status", {"step": 0, "completed": False})
 
-        for key, val in defaults.items():
-            if key not in profile:
-                profile[key] = val
+        if status.get("completed"):
+            return None
 
-        user["profile"] = profile
-        self.memory._save()
+        step = status.get("step", 0)
 
-        # Step 1: Ask name
-        if profile["name"] is None:
+        if step == 0:
             profile["name"] = message.strip().title()
-            self.memory._save()
-            return {"agent": "system", "message": f"Nice to meet you, {profile['name']}! How old are you?"}
+            status["step"] = 1
+            self.memory.update_profile(email, profile)
+            self.memory.db.users.update_one({"email": email}, {"$set": {"onboarding_status": status}})
+            return {"agent": "system", "message": f"Nice to meet you, {profile['name']} 😊\nHow old are you?"}
 
-        # Step 2: Ask age
-        if profile["age"] is None:
+        if step == 1:
             num = re.findall(r"\d+", message)
             if num:
                 profile["age"] = int(num[0])
-                self.memory._save()
+                status["step"] = 2
+                self.memory.update_profile(email, profile)
+                self.memory.db.users.update_one({"email": email}, {"$set": {"onboarding_status": status}})
                 return {
                     "agent": "system",
-                    "message": "Thanks! What gender do you identify with? (male / female / non-binary / prefer not to say)"
+                    "message": "Got it! What gender do you identify with?\n(male / female / non-binary / prefer not to say)"
                 }
-            return {"agent": "system", "message": "Please enter a valid age number."}
+            return {"agent": "system", "message": "Please enter a valid number for age 😊"}
 
-        # Step 3: Ask gender
-        if profile["gender"] is None:
+        if step == 2:
             gender = message.lower().strip()
             valid = ["male", "female", "non-binary", "prefer not to say"]
             if gender in valid:
                 profile["gender"] = gender
-                self.memory._save()
+                status["completed"] = True
+                self.memory.update_profile(email, profile)
+                self.memory.db.users.update_one({"email": email}, {"$set": {"onboarding_status": status}})
+
                 return {
                     "agent": "system",
                     "message": (
-                        f"Great! You're all set, {profile['name']}.\n"
-                        "You can now log meals 🍽️, request workouts 🏋️, or check in with emotions 🧘."
+                        f"Awesome! You're all set, {profile['name']} 🎉\n\n"
+                        "You can now:\n"
+                        "• 🍽 Log meals\n"
+                        "• 🧘 Check your emotions\n"
+                        "• 🏋️ Request a workout\n"
+                        "• 📊 Ask for a progress summary\n\n"
+                        "How can I help today?"
                     )
                 }
-            return {"agent": "system", "message": "Choose one: male / female / non-binary / prefer not to say"}
 
-        return None  # Onboarding complete
+            return {"agent": "system", "message": "Please choose a valid option 🙏"}
 
-    # ----------------- Intent Routing ----------------- #
-    def detect_intent(self, message: str) -> str:
-        text = message.lower()
+        return None
 
-        if any(w in text for w in ["workout", "exercise", "gym", "pushups", "squats"]):
-            return "fitness"
-        if any(w in text for w in ["i ate", "meal", "breakfast", "lunch", "dinner", "food"]):
-            return "nutrition"
-        if any(w in text for w in ["feel", "mood", "stress", "sad", "happy", "anxious"]):
-            return "mindfulness"
-        if any(w in text for w in ["progress", "summary", "stats", "report"]):
-            return "analytics"
+    # ---------------- Intent Detection ---------------- #
+
+    def detect_intent(self, msg: str) -> str:
+        msg = msg.lower()
+
+        rules = {
+            "fitness": ["workout", "exercise", "gym", "pushups", "squats"],
+            "nutrition": ["i ate", "meal", "breakfast", "lunch", "dinner", "food"],
+            "mindfulness": ["feel", "mood", "stress", "sad", "happy", "anxious"],
+            "analytics": ["progress", "summary", "stats", "report"]
+        }
+
+        for intent, words in rules.items():
+            if any(word in msg for word in words):
+                return intent
 
         return "unknown"
 
-    # ----------------- Main Handler ----------------- #
-    def handle(self, user_id: str, message: str) -> dict:
+    # ---------------- Route Requests ---------------- #
 
-        # Run onboarding first
-        onboarding_check = self.onboarding(user_id, message)
-        if onboarding_check:
-            return onboarding_check
+    def handle(self, email: str, message: str) -> dict:
+
+        onboarding_response = self.onboarding(email, message)
+        if onboarding_response:
+            return onboarding_response
 
         intent = self.detect_intent(message)
-        context = {}
+        ctx = {}
 
         if intent == "fitness":
-            match = re.search(r"(\d+)", message)
+            match = re.search(r'\d+', message)
             if match:
-                context["minutes"] = int(match.group(1))
-            return {"agent": "fitness", "data": self.fitness_agent.handle(user_id, message, context)}
+                ctx["minutes"] = int(match.group(0))
+            return {"agent": "fitness", "data": self.fitness_agent.handle(email, message, ctx)}
 
         if intent == "nutrition":
             cleaned = message.lower().replace("i ate", "").strip()
-            context["meal_description"] = cleaned
-            return {"agent": "nutrition", "data": self.nutrition_agent.handle(user_id, cleaned, context)}
+            ctx["meal_description"] = cleaned
+            return {"agent": "nutrition", "data": self.nutrition_agent.handle(email, cleaned, ctx)}
 
         if intent == "mindfulness":
             mood = "neutral"
-            if any(w in message.lower() for w in ["sad", "low", "stressed", "bad"]): mood = "low"
-            if any(w in message.lower() for w in ["happy", "good", "great"]): mood = "high"
-            context["mood"] = mood
-            return {"agent": "mindfulness", "data": self.mindfulness_agent.handle(user_id, message, context)}
+            if any(w in message.lower() for w in ["sad", "stressed", "bad"]): mood = "low"
+            if any(w in message.lower() for w in ["happy", "great"]): mood = "high"
+            ctx["mood"] = mood
+            return {"agent": "mindfulness", "data": self.mindfulness_agent.handle(email, message, ctx)}
 
         if intent == "analytics":
-            return {"agent": "analytics", "data": self.analytics_agent.handle(user_id, message, context)}
+            return {"agent": "analytics", "data": self.analytics_agent.handle(email, message, ctx)}
 
         return {
             "agent": "system",
-            "message": (
-                "I'm not sure what you meant 🤔\nTry:\n"
-                "• 🏋️ 'Give me a 20 min workout'\n"
-                "• 🍽️ 'I ate pasta and veggies'\n"
-                "• 🧘 'I feel stressed'\n"
-                "• 📊 'Show my progress summary'"
-            )
+            "message": "Hmm... I didn’t catch that 🤔\nTry:\n• “I ate pasta”\n• “Give me a workout”\n• “I feel stressed”\n• “Show stats”"
         }
 
-    # ----------------- UI Output Formatting ----------------- #
-    def pretty_print(self, response: dict):
-        agent = response.get("agent")
+    # ---------------- Output for Terminal ---------------- #
 
-        print("\n" + "="*55)
-
-        # SYSTEM / ONBOARDING
-        if agent == "system":
-            print(f"\n💬 {response['message']}")
-            print("="*55 + "\n")
+    def pretty_print(self, res: dict):
+        if res.get("agent") == "system":
+            print("\n💬", res.get("message"), "\n")
             return
 
-        data = response.get("data", {})
-
-        if agent == "nutrition":
-            print("🥗 Nutrition Log Recorded")
-            print(f"🍽 Meal: {data.get('meal_log_entry')}")
-            print(f"💡 Suggestion: {data.get('suggested_improvement')}")
-
-        elif agent == "fitness":
-            print("🏋️ Workout Plan Ready")
-            print(f"📌 {data.get('workout_name')} ({data.get('duration')})")
-            for step in data.get("steps", []):
-                print(f" • {step}")
-            print(f"✨ Tip: {data.get('tips')}")
-
-        elif agent == "mindfulness":
-            print("🧘 Mindfulness Check-In")
-            print(f"💬 {data.get('mood_acknowledgement')}")
-            print(f"📓 Journal: {data.get('journal_prompt')}")
-            print(f"🌿 Breathing: {data.get('optional_breathing_or_grounding')}")
-            print(f"💛 {data.get('supportive_message')}")
-
-        elif agent == "analytics":
-            print("📊 Progress Overview")
-            stats = data.get("stats", {})
-            streaks = stats.get("streaks", {})
-            print(f"🏋️ Workouts: {stats.get('total_workouts', 0)}")
-            print(f"🥗 Meals: {stats.get('total_meals_logged', 0)}")
-            print(f"🧠 Mood logs: {stats.get('total_mood_checkins', 0)}")
-            print(f"🔥 Best Streak: {max(streaks.values())} days")
-            print(f"🏅 Badge: {data.get('achievement_badge')}")
-            print(f"💛 {data.get('encouragement')}")
-            print(f"🎯 Next step: {data.get('next_micro_goal')}")
-
-        print("="*55 + "\n")
+        print("\n🤖", res, "\n")
 
 
-# ----------------- Run App ----------------- #
+# ---------------- Main Program ---------------- #
+
 def main():
     orch = Orchestrator()
-    user_id = "local_user"
 
-    print("\n✨ Welcome to Trackr AI — your wellbeing companion ✨\n")
-    print("Whats your name buddy?")
+    print("\n✨ Welcome to Trackr AI — your wellbeing companion ✨")
+
+    email = input("\n📧 Enter your email: ").strip().lower()
+
+    print("\n📨 Sending OTP...")
+    if not orch.auth.start_login(email):
+        print("❌ OTP could not be sent. Check email config.")
+        return
+
+    print(f"📧 OTP sent to {email} — check inbox!")
+
+    while True:
+        otp = input("🔐 Enter OTP: ").strip()
+        if orch.auth.verify(email, otp):
+            print("\n🎉 Login successful!")
+            break
+        print("❌ Incorrect OTP — try again.\n")
+
+    print("\nLet's get started 😊 What's your name?\n")
 
     while True:
         msg = input("You: ")
-        if msg.lower() in ("exit", "quit"):
-            print("\n👋 Bye! Small steps build big change.\n")
+        if msg.lower() in ["exit", "quit"]:
+            print("\n👋 Take care — small steps build big change 💛")
             break
 
-        response = orch.handle(user_id, msg)
-        orch.pretty_print(response)
+        reply = orch.handle(email, msg)
+        orch.pretty_print(reply)
 
 
 if __name__ == "__main__":

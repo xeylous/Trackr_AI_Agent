@@ -3,82 +3,115 @@
 from datetime import datetime
 import json
 from agents.base_agent import BaseAgent
+from utils.personality import add_warmth
+
 
 class FitnessAgent(BaseAgent):
     """
     Fitness Coach Agent:
-    - Uses Gemini to generate safe beginner-friendly workouts.
-    - Falls back to a default plan if Gemini output isn't valid JSON.
+    - Generates safe, beginner-friendly workouts using Gemini.
+    - Adapts tone based on profile (age, gender, fitness level).
+    - Includes fallback plan if LLM doesn't return valid JSON.
     """
 
     def __init__(self, memory, llm):
         super().__init__(memory, llm, "fitness_agent")
 
     def handle(self, user_id: str, message: str, context: dict) -> dict:
+
         user = self.memory.get_user(user_id)
         profile = user["profile"]
+
+        name = profile.get("name") or "friend"
+        age = profile.get("age")
+        fitness_level = profile.get("fitness_level") or "beginner"
+        equipment = profile.get("equipment", [])
         minutes = context.get("minutes", 20)
 
-        system_prompt = """
+        # --------- Personalized Tone Context --------- #
+
+        if age and age < 18:
+            tone = "Make the tone positive and beginner-friendly, like an encouraging coach."
+        elif age and age > 50:
+            tone = "Tone should be respectful, calm, and gently motivating."
+        else:
+            tone = "Tone should be concise, encouraging, and supportive."
+
+        equipment_note = (
+            f"The user has equipment available: {', '.join(equipment)}. You may optionally incorporate it."
+            if equipment else "Use only bodyweight unless needed."
+        )
+
+        # --------- System Prompt for Gemini --------- #
+
+        system_prompt = f"""
         You are the Fitness Coach Agent for LifeBalance AI.
 
-        Rules:
-        - Create a beginner-friendly workout.
-        - Use only bodyweight unless user mentions equipment.
-        - Stay within requested time.
-        - Keep responses safe and non-medical.
-        - Tone: short, positive, and encouraging.
+        Personalization:
+        - User: {name}
+        - Age: {age}
+        - Fitness Level: {fitness_level}
+        
+        {tone}
+        {equipment_note}
 
-        Respond ONLY as JSON:
+        Safety Rules:
+        - Avoid medical instructions or injury guidance.
+        - Keep workouts beginner-safe and time-friendly.
 
-        {
-          "workout_name": "",
-          "duration": "",
-          "intensity": "",
-          "steps": [],
-          "tips": ""
-        }
+        Format the response ONLY as valid JSON:
+        {{
+            "workout_name": "",
+            "duration": "",
+            "intensity": "",
+            "steps": [],
+            "tips": ""
+        }}
         """
 
-        user_prompt = f"""
-        User Profile:
-        - Name: {profile['name']}
-        - Age: {profile['age']}
-        - Gender: {profile['gender']}
-        - Fitness level: {profile.get('fitness_level', 'beginner')}
-        Available time: {minutes} minutes
-        User request: "{message}"
-        """
+        user_prompt = f'The user said: "{message}". They have {minutes} minutes available.'
 
+        # --------- Attempt LLM --------- #
 
-        # Call Gemini if available, otherwise fallback
         try:
-            result = self.llm.generate(system_prompt, user_prompt) if self.llm else ""
-        except Exception:
-            result = ""
+            generated = self.llm.generate(system_prompt, user_prompt) if self.llm else ""
+        except:
+            generated = ""
 
-        # Attempt to parse JSON; fallback if invalid
         try:
-            workout = json.loads(result)
-        except Exception:
+            workout = json.loads(generated)
+        except:
             workout = {
-                "workout_name": "Quick full-body routine",
+                "workout_name": "Quick Full-Body Routine",
                 "duration": f"{minutes} minutes",
-                "intensity": profile.get("fitness_level", "beginner"),
+                "intensity": fitness_level,
                 "steps": [
-                    "5 min warm-up: walk in place",
-                    "3 x 10 bodyweight squats",
-                    "3 x 10 push-ups (knees if needed)",
-                    "3 x 20 jumping jacks",
-                    "5 min stretching: legs, arms, back"
+                    "Warm-up: march in place — 2 minutes",
+                    "10 bodyweight squats",
+                    "10 push-ups (knees ok)",
+                    "20 jumping jacks",
+                    "Rest 1 minute, repeat sequence twice",
+                    "Finish: light stretching — 5 minutes"
                 ],
-                "tips": "Move at a comfortable pace and stop if you feel discomfort."
+                "tips": "Move at a comfortable pace. Hydrate and take pauses if needed."
             }
 
-        # Save workout log
+        # --------- Save workout log --------- #
         self.memory.append_log(user_id, "workouts", {
             "timestamp": datetime.utcnow().isoformat(),
             "plan": workout
         })
+
+        # --------- Prepare Friendly UI Output --------- #
+
+        display_text = (
+            f"🏋️ Workout Ready for **{name}!**\n\n"
+            f"⏱ Duration: **{workout['duration']}**\n"
+            f"🔥 Intensity: **{workout['intensity']}**\n\n"
+            f"📋 Steps:\n" + "\n".join([f"• {step}" for step in workout["steps"]]) +
+            f"\n\n✨ Tip:\n➡ {workout['tips']}"
+        )
+
+        workout["display"] = add_warmth(display_text)
 
         return workout
