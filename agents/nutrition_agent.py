@@ -3,60 +3,62 @@
 from datetime import datetime
 import json
 from agents.base_agent import BaseAgent
+from utils.personality import add_warmth
+
 
 class NutritionAgent(BaseAgent):
     """
     Nutrition Agent:
-    - Logs meals and encourages gentle habit improvements.
-    - Uses profile context (age, preferences, and goals) for tone personalization.
-    - Avoids strict dietary advice, diagnoses, or calorie estimation.
+    - Logs meals and encourages gentle improvements.
+    - Uses profile data to tailor tone and suggestions.
+    - Avoids calorie estimates, rules, or medical advice.
     """
 
     def __init__(self, memory, llm):
         super().__init__(memory, llm, "nutrition_agent")
 
     def handle(self, user_id: str, message: str, context: dict) -> dict:
+
+        # Retrieve user info
         user = self.memory.get_user(user_id)
         profile = user["profile"]
 
         meal_desc = context.get("meal_description", message)
 
-        # Log the meal
+        # Store meal entry
         self.memory.append_log(user_id, "meals", {
             "timestamp": datetime.utcnow().isoformat(),
             "meal": meal_desc,
-            "estimated_calories": None  # safely stored for future enhancements
+            "estimated_calories": None
         })
 
-        # ---------- Personalization Context ---------- #
+        # ---------------------- Personalization ---------------------- #
         name = profile.get("name") or "friend"
         age = profile.get("age")
         diet = profile.get("diet_type")
         goal = profile.get("goals")
 
-        # Tone adjustments based on age (safe, non-medical)
+        # Tone adjustments
         if age and age < 18:
-            tone_instruction = "Use a warm supportive tone like a friendly mentor."
+            tone_instruction = "Tone should feel friendly and mentor-like."
         elif age and age > 50:
-            tone_instruction = "Use a respectful, encouraging tone."
+            tone_instruction = "Tone should be respectful, encouraging, and warm."
         else:
-            tone_instruction = "Use a balanced, encouraging tone."
+            tone_instruction = "Use a balanced, supportive tone."
 
-        # Diet-specific encouragement (not restrictions)
         diet_context = ""
         if diet and diet != "general":
-            diet_context = f"The user prefers a **{diet}** style of eating. Keep suggestions aligned with this preference without enforcing rules."
+            diet_context = f"User prefers a **{diet}** style of eating — keep suggestions aligned without imposing rules."
 
-        # Health or lifestyle goals
         if goal:
-            diet_context += f" Their personal goal is: **{goal}**. Offer small improvements aligned with this goal."
+            diet_context += f" Their personal goal is: **{goal}**."
 
-        # ---------- SYSTEM INSTRUCTION ---------- #
+        # ---------------------- System Prompt ---------------------- #
         system_prompt = f"""
-        You are the Nutrition Coach Agent for LifeBalance AI.
+        You are a supportive Nutrition Coach Agent for LifeBalance AI.
 
-        Personalization guidelines:
-        - User name: {name}
+        Personalization:
+        - Name: {name}
         - Age: {age}
         - Gender: {profile.get("gender")}
         - Diet preference: {diet}
@@ -65,13 +67,13 @@ class NutritionAgent(BaseAgent):
         {tone_instruction}
         {diet_context}
 
-        Strict boundaries:
-        - NO calorie estimates.
-        - NO medical, clinical, or diagnostic guidance.
-        - NO strict diet rules ("you must", "avoid", "never").
-        - Encourage balanced choices: hydration, fruits/vegetables, fiber.
+        Boundaries:
+        - NO calorie guessing.
+        - NO diet restrictions or rule-based language.
+        - NO medical or diagnostic advice.
+        - Encourage balance: water, vegetables, variety, fiber.
 
-        Respond ONLY in valid JSON format:
+        Respond ONLY as valid JSON:
         {{
             "meal_log_entry": "",
             "estimated_calories": null,
@@ -80,30 +82,35 @@ class NutritionAgent(BaseAgent):
         }}
         """
 
-        # ---------- USER PROMPT ---------- #
-        user_prompt = f"""
-        The user logged this meal: "{meal_desc}"
-        Provide a supportive improvement idea.
-        """
+        user_prompt = f'The user logged this meal: "{meal_desc}". Offer a gentle improvement idea.'
 
-        # Try LLM generation
+        # Attempt LLM response
         try:
             generated = self.llm.generate(system_prompt, user_prompt) if self.llm else ""
-        except Exception:
+        except:
             generated = ""
 
-        # Try parse response; fallback to safe template
+        # Parse → or fallback
         try:
-            response = json.loads(generated)
-        except Exception:
-            response = {
+            structured = json.loads(generated)
+        except:
+            structured = {
                 "meal_log_entry": meal_desc,
                 "estimated_calories": None,
                 "nutrition_type": diet or "general",
                 "suggested_improvement": (
-                    f"Thanks for logging that, {name}. If you'd like an optional improvement, "
-                    f"you could add a fruit, vegetable, or glass of water to balance the meal."
+                    f"Nice job logging your meal, {name} 🌿. "
+                    f"If you want a tiny improvement, consider adding a vegetable, fruit, "
+                    f"or a glass of water to balance it."
                 )
             }
 
-        return response
+        # ------- Create Friendly Display Text ------- #
+        display_text = (
+            f"🥗 Meal logged: **{structured['meal_log_entry']}**\n\n"
+            f"💡 Suggested improvement:\n➡ {structured['suggested_improvement']}"
+        )
+
+        structured["display"] = add_warmth(display_text)
+
+        return structured
