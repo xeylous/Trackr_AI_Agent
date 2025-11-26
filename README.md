@@ -1,6 +1,6 @@
 ﻿#  Trackr AI — Personal Wellness Multi-Agent Assistant
 
-### 🧩 Capstone Project — Google Gemini Agents Intensive (2025)  
+###  Capstone Project — Google Gemini Agents Intensive (2025)  
 **Track: Agents for Good**
 
 ---
@@ -59,4 +59,5 @@ The app includes:
 ## 🧱 Architecture
 
  ![Alt text](./architecture.svg)
+
 
